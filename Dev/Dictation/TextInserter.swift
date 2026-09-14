@@ -9,17 +9,26 @@ enum InsertResult: Equatable, Sendable {
 
 @MainActor
 enum TextInserter {
+    static var onPasteboardMutation: (() -> Void)?
+
+    private static var generation = 0
+    private static let transientType = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
+
     static func insert(_ text: String, into target: NSRunningApplication?) async -> InsertResult {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .copied }
 
+        generation += 1
+        let generation = self.generation
         let pasteboard = NSPasteboard.general
         let previous = snapshot(pasteboard)
-        pasteboard.clearContents()
-        pasteboard.setString(trimmed, forType: .string)
+        write(trimmed, onto: pasteboard, transient: true)
+        let writtenCount = pasteboard.changeCount
+        onPasteboardMutation?()
 
         resignOurWindows()
-        if let target, target.bundleIdentifier != Bundle.main.bundleIdentifier {
+        if let target, !target.isTerminated,
+           target.bundleIdentifier != Bundle.main.bundleIdentifier {
             _ = target.activate(options: [])
             try? await Task.sleep(for: .milliseconds(80))
         }
@@ -27,13 +36,29 @@ enum TextInserter {
         let pasted = insertViaAccessibility(trimmed) || postPaste()
 
         if pasted {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1.2))
+                guard self.generation == generation else { return }
+                guard pasteboard.changeCount == writtenCount else { return }
                 restore(previous, onto: pasteboard)
+                onPasteboardMutation?()
             }
             return .pasted
         }
 
+        write(trimmed, onto: pasteboard, transient: false)
+        onPasteboardMutation?()
         return .copied
+    }
+
+    private static func write(_ text: String, onto pasteboard: NSPasteboard, transient: Bool) {
+        pasteboard.clearContents()
+        let item = NSPasteboardItem()
+        item.setString(text, forType: .string)
+        if transient {
+            item.setString("", forType: transientType)
+        }
+        pasteboard.writeObjects([item])
     }
 
     private static func resignOurWindows() {

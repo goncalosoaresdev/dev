@@ -21,6 +21,10 @@ final class SettingsStore {
         didSet { defaults.set(screenshotsEnabled, forKey: Keys.screenshotsEnabled) }
     }
 
+    var clipboardEnabled: Bool {
+        didSet { defaults.set(clipboardEnabled, forKey: Keys.clipboardEnabled) }
+    }
+
     var screenshotHotkey: Hotkey {
         didSet { saveScreenshotHotkey() }
     }
@@ -71,6 +75,7 @@ final class SettingsStore {
         soundEnabled = defaults.object(forKey: Keys.soundEnabled) as? Bool ?? true
         dictationEnabled = defaults.object(forKey: Keys.dictationEnabled) as? Bool ?? true
         screenshotsEnabled = defaults.object(forKey: Keys.screenshotsEnabled) as? Bool ?? true
+        clipboardEnabled = defaults.object(forKey: Keys.clipboardEnabled) as? Bool ?? true
         if let raw = defaults.string(forKey: Keys.pushToTalkMode),
            let mode = PushToTalkMode(rawValue: raw) {
             pushToTalkMode = mode
@@ -134,6 +139,7 @@ final class SettingsStore {
         static let pushToTalkMode = "pushToTalkMode"
         static let screenshotsEnabled = "screenshots.enabled"
         static let screenshotHotkey = "screenshots.hotkey"
+        static let clipboardEnabled = "clipboard.enabled"
     }
 }
 

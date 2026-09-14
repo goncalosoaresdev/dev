@@ -3,10 +3,11 @@ import Observation
 import SwiftUI
 
 @MainActor
-final class MenuBarController: NSObject {
+final class MenuBarController: NSObject, NSPopoverDelegate {
     private let environment: AppEnvironment
     private let item: NSStatusItem
     private let popover = NSPopover()
+    private var closeWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(environment: AppEnvironment) {
         self.environment = environment
@@ -24,12 +25,18 @@ final class MenuBarController: NSObject {
 
         popover.behavior = .semitransient
         popover.animates = true
-        popover.contentSize = NSSize(width: 340, height: 405)
+        popover.delegate = self
+        popover.contentSize = NSSize(width: 340, height: 620)
         popover.contentViewController = NSHostingController(
             rootView: MenuPopoverView(
                 environment: environment,
                 onOpenSettings: { [weak self] in
                     self?.openSettings()
+                },
+                onInsertClip: { [weak self] item in
+                    Task { @MainActor in
+                        await self?.insertClip(item)
+                    }
                 }
             )
         )
@@ -47,6 +54,7 @@ final class MenuBarController: NSObject {
         if popover.isShown {
             popover.performClose(nil)
         } else {
+            environment.clipboard.rememberFrontmostApp()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
     }
@@ -73,6 +81,40 @@ final class MenuBarController: NSObject {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        finishCloseWaiters()
+    }
+
+    private func insertClip(_ item: ClipboardItem) async {
+        await closePopover()
+        _ = await environment.clipboard.insert(item)
+    }
+
+    private func closePopover() async {
+        guard popover.isShown else { return }
+        await withCheckedContinuation { continuation in
+            closeWaiters.append(continuation)
+            let wasAnimating = popover.animates
+            popover.animates = false
+            popover.performClose(nil)
+            popover.animates = wasAnimating
+            if !popover.isShown {
+                finishCloseWaiters()
+            } else {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(250))
+                    self.finishCloseWaiters()
+                }
+            }
+        }
+    }
+
+    private func finishCloseWaiters() {
+        let waiters = closeWaiters
+        closeWaiters.removeAll()
+        waiters.forEach { $0.resume() }
     }
 
     private func observePhase() {

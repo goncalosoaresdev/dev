@@ -51,6 +51,8 @@ struct SettingsView: View {
                         dictationPage(settings: settings)
                     case .screenshots:
                         screenshotsPage(settings: settings)
+                    case .clipboard:
+                        clipboardPage(settings: settings)
                     case .permissions:
                         permissionsPage(permissions: permissions)
                     case .usage:
@@ -211,6 +213,27 @@ struct SettingsView: View {
             }
             .disabled(!settings.screenshotsEnabled)
             .opacity(settings.screenshotsEnabled ? 1 : 0.48)
+        }
+    }
+
+    private func clipboardPage(settings: SettingsStore) -> some View {
+        @Bindable var settings = settings
+
+        return VStack(spacing: 16) {
+            ClipboardHero(isEnabled: $settings.clipboardEnabled)
+
+            SettingsCard(title: "History", symbol: "clock") {
+                SettingsControlRow(
+                    title: "Recent copies",
+                    detail: "Dev keeps the last 5 copied texts locally on this Mac. Password-manager copies are ignored."
+                ) {
+                    Button("Clear History") {
+                        environment.clipboard.store.clear()
+                    }
+                    .disabled(environment.clipboard.store.items.isEmpty)
+                }
+            }
+            .opacity(settings.clipboardEnabled ? 1 : 0.48)
         }
     }
 
@@ -438,6 +461,7 @@ struct SettingsView: View {
 private enum SettingsPage: String, CaseIterable, Identifiable {
     case dictation
     case screenshots
+    case clipboard
     case permissions
     case usage
     case general
@@ -448,6 +472,7 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .dictation: "Dictation"
         case .screenshots: "Screenshots"
+        case .clipboard: "Clipboard"
         case .permissions: "Permissions"
         case .usage: "Usage"
         case .general: "General"
@@ -458,6 +483,7 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .dictation: "Shape how push to talk listens and transcribes."
         case .screenshots: "Capture exactly what you choose and keep it close."
+        case .clipboard: "Keep the last five texts you copy, then insert one back."
         case .permissions: "Manage the system access Dev needs to work."
         case .usage: "See how much dictation you use without storing what you say."
         case .general: "Choose how Dev behaves on your Mac."
@@ -468,10 +494,45 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .dictation: "waveform"
         case .screenshots: "viewfinder"
+        case .clipboard: "doc.on.clipboard"
         case .permissions: "hand.raised"
         case .usage: "chart.bar.xaxis"
         case .general: "gearshape"
         }
+    }
+}
+
+private struct ClipboardHero: View {
+    @Binding var isEnabled: Bool
+
+    var body: some View {
+        HStack(spacing: 18) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(.primary.opacity(0.72), lineWidth: 1.5)
+                Image(systemName: "doc.on.clipboard")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 52, height: 34)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(isEnabled ? "Ready to remember copies" : "Clipboard paused")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("Last five texts")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Toggle("Clipboard", isOn: $isEnabled)
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+        .padding(.horizontal, 20)
+        .frame(height: 84)
+        .settingsGlassSurface()
     }
 }
 

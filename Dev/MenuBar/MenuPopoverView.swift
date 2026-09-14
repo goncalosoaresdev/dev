@@ -3,6 +3,7 @@ import SwiftUI
 struct MenuPopoverView: View {
     @Bindable var environment: AppEnvironment
     var onOpenSettings: () -> Void = {}
+    var onInsertClip: (ClipboardItem) -> Void = { _ in }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -12,10 +13,12 @@ struct MenuPopoverView: View {
             Divider()
             screenshotAction
             ScreenshotShelfView(screenshots: environment.screenshots)
+            ClipboardShelfView(clipboard: environment.clipboard, onInsert: onInsertClip)
+            Spacer(minLength: 0)
             footer
         }
         .padding(16)
-        .frame(width: 340, height: 405)
+        .frame(width: 340, height: 620, alignment: .top)
         .tint(.accentColor)
     }
 

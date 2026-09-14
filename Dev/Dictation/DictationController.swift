@@ -19,6 +19,8 @@ final class DictationController {
     private(set) var partial = ""
     private(set) var level: Float = 0
 
+    var onCopiedText: ((String) -> Void)?
+
     private let settings: SettingsStore
     private let permissions: PermissionMonitor
     private let overlay: OverlayController
@@ -205,6 +207,7 @@ final class DictationController {
         let result = await TextInserter.insert(cleaned, into: targetApp)
         if result == .copied {
             overlay.setStatus("Copied — ⌘V to paste", text: cleaned, level: 0, kind: .done)
+            onCopiedText?(cleaned)
             scheduleHide(after: 1.8)
         } else {
             overlay.hide()

@@ -12,6 +12,7 @@ final class AppEnvironment {
     let hotkey = HotkeyMonitor()
     let screenshots: ScreenshotController
     let screenshotHotkey = ScreenshotHotkeyMonitor()
+    let clipboard: ClipboardController
     private var settingsWindow: SettingsWindowController?
 
     init() {
@@ -22,6 +23,7 @@ final class AppEnvironment {
             usage: usage
         )
         screenshots = ScreenshotController(settings: settings, permissions: permissions)
+        clipboard = ClipboardController(settings: settings)
     }
 
     func start() {
@@ -54,6 +56,13 @@ final class AppEnvironment {
             screenshots.beginSelection()
         }
         screenshotHotkey.start()
+        dictation.onCopiedText = { [clipboard] text in
+            clipboard.recordCopiedText(text)
+        }
+        TextInserter.onPasteboardMutation = { [clipboard] in
+            clipboard.ignoreCurrentPasteboard()
+        }
+        clipboard.start()
         observeHotkey()
         observeScreenshotHotkey()
         permissions.refresh()
@@ -93,6 +102,9 @@ final class AppEnvironment {
     func stop() {
         hotkey.stop()
         screenshotHotkey.stop()
+        clipboard.stop()
+        TextInserter.onPasteboardMutation = nil
+        dictation.onCopiedText = nil
         dictation.cancel()
         screenshots.cancel()
         overlay.hide()

@@ -2,7 +2,7 @@
 
 A macOS menu-bar kit for developer tools. Fast, native, no dock icon.
 
-The first tool is **Dictate**: hold a hotkey, speak, release, and the transcript is pasted into the frontmost app. It streams to [Muse Voice Transcribe](https://ai.developer.meta.com/docs/speech-to-text) over the realtime WebSocket. Dev also includes selection-first screenshots with recent history, instant drag-out sharing, and a native markup editor.
+The first tool is **Dictate**: hold a hotkey, speak, release, and the transcript is pasted into the frontmost app. It streams to [Muse Voice Transcribe](https://ai.developer.meta.com/docs/speech-to-text) over the realtime WebSocket. Dev also includes selection-first screenshots with recent history, instant drag-out sharing, a native markup editor, and a last-five clip history for copied text.
 
 ## Use it
 
@@ -24,6 +24,12 @@ Default shortcut is Control + Option. Change it in Settings. If paste is blocked
 4. Choose **Annotate** (or click a recent thumbnail) to add boxes, arrows, freehand lines, text, or redactions. The editor supports colors, stroke widths, selection/move, delete, clear, undo, and redo.
 
 The screenshot shortcut is configurable under Settings → Screenshots. The first capture asks for Screen Recording access; quit and reopen Dev if macOS requests it after permission is granted. Dev keeps the latest 20 captures in `~/Library/Application Support/Dev/Screenshots`.
+
+## Clipboard
+
+Copied text from any app shows up in the menu-bar popover, newest first. Dev keeps only the last five strings. Click a row to insert it at the cursor in the app you were using. Password-manager copies marked concealed or transient are ignored.
+
+Turn this off under Settings → Clipboard. History lives in `~/Library/Application Support/Dev/Clipboard`.
 
 `make run` signs Dev with a local cert and installs `/Applications/Dev.app`. Add **that** copy once in Input Monitoring and Accessibility. Rebuilds keep the same signature, so macOS will not ask again.
 
@@ -53,6 +59,7 @@ Dev/                  menu bar app, settings, permissions
 Dev/Dictation/        hotkey, mic, overlay, paste
 Dev/Dictation/Transcription/Muse/   Muse WebSocket client
 Dev/Screenshots/       region capture, instant drag-out, history, markup editor
+Dev/Clipboard/         last-five copied text, insert from the popover
 ```
 
 More tools should land as sibling folders of `Dictation`, wired from the menu bar. Keep each tool small.
