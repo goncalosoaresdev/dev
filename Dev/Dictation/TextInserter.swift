@@ -20,7 +20,7 @@ enum TextInserter {
 
         resignOurWindows()
         if let target, target.bundleIdentifier != Bundle.main.bundleIdentifier {
-            _ = target.activate(options: [.activateIgnoringOtherApps])
+            _ = target.activate(options: [])
             try? await Task.sleep(for: .milliseconds(80))
         }
 

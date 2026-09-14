@@ -24,7 +24,7 @@ final class MenuBarController: NSObject {
 
         popover.behavior = .semitransient
         popover.animates = true
-        popover.contentSize = NSSize(width: 320, height: 252)
+        popover.contentSize = NSSize(width: 340, height: 405)
         popover.contentViewController = NSHostingController(
             rootView: MenuPopoverView(
                 environment: environment,
@@ -35,6 +35,7 @@ final class MenuBarController: NSObject {
         )
 
         observePhase()
+        observeScreenshotPhase()
     }
 
     @objc private func togglePopover(_ sender: NSStatusBarButton) {
@@ -84,6 +85,20 @@ final class MenuBarController: NSObject {
             }
         }
         applyIcon()
+    }
+
+    private func observeScreenshotPhase() {
+        withObservationTracking {
+            _ = environment.screenshots.phase
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                if self.environment.screenshots.phase == .selecting {
+                    self.popover.performClose(nil)
+                }
+                self.observeScreenshotPhase()
+            }
+        }
     }
 
     private func applyIcon() {

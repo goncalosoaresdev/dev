@@ -13,6 +13,12 @@ struct Hotkey: Codable, Equatable, Sendable {
         modifiersOnly: true
     )
 
+    static let screenshotDefault = Hotkey(
+        keyCode: 19,
+        modifiers: CGEventFlags.maskShift.rawValue | CGEventFlags.maskCommand.rawValue,
+        modifiersOnly: false
+    )
+
     var flags: CGEventFlags {
         CGEventFlags(rawValue: modifiers)
     }
@@ -55,6 +61,44 @@ struct Hotkey: Codable, Equatable, Sendable {
             return wasDown && flags == wanted
         default:
             return wasDown
+        }
+    }
+
+    func matchesKeyDown(type: CGEventType, keyCode: UInt16, flags: CGEventFlags) -> Bool {
+        !modifiersOnly
+            && type == .keyDown
+            && keyCode == self.keyCode
+            && flags.hotkeyRelevant == self.flags.hotkeyRelevant
+    }
+
+    func isKeyedChord(using modifiers: CGEventFlags) -> Bool {
+        !modifiersOnly && flags.hotkeyRelevant == modifiers.hotkeyRelevant
+    }
+
+    func conflicts(with other: Hotkey) -> Bool {
+        if self == other { return true }
+        guard modifiersOnly != other.modifiersOnly else { return false }
+        return flags.hotkeyRelevant == other.flags.hotkeyRelevant
+    }
+
+    var knownSystemShortcutName: String? {
+        guard !modifiersOnly else { return nil }
+        let relevant = flags.hotkeyRelevant
+        let command = CGEventFlags.maskCommand
+        let control = CGEventFlags.maskControl
+        let option = CGEventFlags.maskAlternate
+        let shift = CGEventFlags.maskShift
+
+        switch (keyCode, relevant) {
+        case (49, command): return "Spotlight"
+        case (49, control): return "macOS input-source switching"
+        case (48, command), (48, command.union(shift)): return "macOS app switching"
+        case (20, command.union(shift)),
+             (21, command.union(shift)),
+             (23, command.union(shift)): return "macOS screenshots"
+        case (53, command.union(option)): return "Force Quit"
+        case (123, control), (124, control), (125, control), (126, control): return "Mission Control"
+        default: return nil
         }
     }
 

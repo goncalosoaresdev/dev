@@ -9,10 +9,13 @@ struct MenuPopoverView: View {
             header
             dictationAction
             shortcutHint
+            Divider()
+            screenshotAction
+            ScreenshotShelfView(screenshots: environment.screenshots)
             footer
         }
         .padding(16)
-        .frame(width: 320, height: 252)
+        .frame(width: 340, height: 405)
         .tint(.accentColor)
     }
 
@@ -87,6 +90,38 @@ struct MenuPopoverView: View {
             MenuFooterButton(title: "Quit", symbol: "power") {
                 NSApp.terminate(nil)
             }
+        }
+    }
+
+    private var screenshotAction: some View {
+        Button {
+            environment.screenshots.beginSelection()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "viewfinder")
+                    .symbolRenderingMode(.monochrome)
+                Text("Capture Selection")
+                Spacer()
+                Text(environment.settings.screenshotHotkey.display)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+            }
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity)
+            .frame(height: 38)
+        }
+        .buttonStyle(.plain)
+        .background(.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .disabled(!environment.settings.screenshotsEnabled || screenshotBusy)
+    }
+
+    private var screenshotBusy: Bool {
+        switch environment.screenshots.phase {
+        case .idle, .failed: false
+        case .requestingPermission, .selecting, .capturing, .saving: true
         }
     }
 

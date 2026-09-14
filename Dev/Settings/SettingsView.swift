@@ -49,6 +49,8 @@ struct SettingsView: View {
                     switch selection {
                     case .dictation:
                         dictationPage(settings: settings)
+                    case .screenshots:
+                        screenshotsPage(settings: settings)
                     case .permissions:
                         permissionsPage(permissions: permissions)
                     case .usage:
@@ -106,7 +108,15 @@ struct SettingsView: View {
                 SettingsDivider()
 
                 SettingsControlRow(title: "Shortcut", detail: shortcutHelp(settings: settings)) {
-                    HotkeyRecorder(hotkey: $settings.hotkey, monitor: environment.hotkey)
+                    HotkeyRecorder(
+                        hotkey: $settings.hotkey,
+                        conflictingHotkey: settings.screenshotHotkey,
+                        conflictName: "Screenshot",
+                        allowsSystemShortcuts: true
+                    ) { paused in
+                        environment.hotkey.paused = paused
+                        environment.screenshotHotkey.paused = paused
+                    }
                 }
             }
             .disabled(!settings.dictationEnabled)
@@ -163,15 +173,57 @@ struct SettingsView: View {
         }
     }
 
+    private func screenshotsPage(settings: SettingsStore) -> some View {
+        @Bindable var settings = settings
+
+        return VStack(spacing: 16) {
+            ScreenshotHero(isEnabled: $settings.screenshotsEnabled)
+
+            SettingsCard(title: "Capture", symbol: "viewfinder") {
+                SettingsControlRow(
+                    title: "Shortcut",
+                    detail: environment.screenshotHotkey.registrationError
+                        ?? "Press once, then drag to choose exactly what to capture."
+                ) {
+                    HotkeyRecorder(
+                        hotkey: $settings.screenshotHotkey,
+                        conflictingHotkey: settings.hotkey,
+                        conflictName: "Dictation"
+                    ) { paused in
+                        environment.screenshotHotkey.paused = paused
+                        environment.hotkey.paused = paused
+                    }
+                }
+
+                SettingsDivider()
+
+                SettingsControlRow(
+                    title: "Recent screenshots",
+                    detail: "Dev keeps the latest 20 captures locally on this Mac."
+                ) {
+                    Button("Show in Finder") {
+                        if let item = environment.screenshots.library.items.first {
+                            environment.screenshots.library.reveal(item)
+                        }
+                    }
+                    .disabled(environment.screenshots.library.items.isEmpty)
+                }
+            }
+            .disabled(!settings.screenshotsEnabled)
+            .opacity(settings.screenshotsEnabled ? 1 : 0.48)
+        }
+    }
+
     private func permissionsPage(permissions: PermissionMonitor) -> some View {
         let grantedCount = [
             permissions.microphoneGranted,
             permissions.inputMonitoringTrusted,
             permissions.accessibilityTrusted,
+            permissions.screenRecordingGranted,
         ].filter { $0 }.count
 
         return VStack(spacing: 16) {
-            ReadinessHero(granted: grantedCount, total: 3)
+            ReadinessHero(granted: grantedCount, total: 4)
 
             SettingsCard(title: "System access", symbol: "checkmark.shield") {
                 PermissionRow(
@@ -211,6 +263,20 @@ struct SettingsView: View {
                     actionTitle: permissions.accessibilityTrusted ? "Ready" : "Open Settings"
                 ) {
                     permissions.openAccessibilitySettings()
+                }
+
+                SettingsDivider()
+
+                PermissionRow(
+                    title: "Screen Recording",
+                    detail: "Captures only the screen region you select.",
+                    symbol: "rectangle.dashed",
+                    granted: permissions.screenRecordingGranted,
+                    actionTitle: permissions.screenRecordingGranted ? "Ready" : "Enable"
+                ) {
+                    if !permissions.requestScreenRecording() {
+                        permissions.openScreenRecordingSettings()
+                    }
                 }
             }
 
@@ -371,6 +437,7 @@ struct SettingsView: View {
 
 private enum SettingsPage: String, CaseIterable, Identifiable {
     case dictation
+    case screenshots
     case permissions
     case usage
     case general
@@ -380,6 +447,7 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .dictation: "Dictation"
+        case .screenshots: "Screenshots"
         case .permissions: "Permissions"
         case .usage: "Usage"
         case .general: "General"
@@ -389,6 +457,7 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .dictation: "Shape how push to talk listens and transcribes."
+        case .screenshots: "Capture exactly what you choose and keep it close."
         case .permissions: "Manage the system access Dev needs to work."
         case .usage: "See how much dictation you use without storing what you say."
         case .general: "Choose how Dev behaves on your Mac."
@@ -398,10 +467,45 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .dictation: "waveform"
+        case .screenshots: "viewfinder"
         case .permissions: "hand.raised"
         case .usage: "chart.bar.xaxis"
         case .general: "gearshape"
         }
+    }
+}
+
+private struct ScreenshotHero: View {
+    @Binding var isEnabled: Bool
+
+    var body: some View {
+        HStack(spacing: 18) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(.primary.opacity(0.72), lineWidth: 1.5)
+                Image(systemName: "plus")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 52, height: 34)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(isEnabled ? "Ready to capture" : "Screenshots paused")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("Select only what you need")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Toggle("Screenshots", isOn: $isEnabled)
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+        .padding(.horizontal, 20)
+        .frame(height: 84)
+        .settingsGlassSurface()
     }
 }
 
@@ -730,42 +834,78 @@ private extension View {
 
 private struct HotkeyRecorder: View {
     @Binding var hotkey: Hotkey
-    var monitor: HotkeyMonitor
+    let conflictingHotkey: Hotkey
+    let conflictName: String
+    var allowsSystemShortcuts = false
+    var setPaused: (Bool) -> Void
     @State private var recording = false
+    @State private var validationMessage: String?
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text(recording ? "Press shortcut…" : hotkey.display)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7))
-                .onTapGesture {
-                    recording = true
-                    monitor.paused = true
+        VStack(alignment: .trailing, spacing: 4) {
+            HStack(spacing: 8) {
+                Text(recording ? "Press shortcut…" : hotkey.display)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7))
+                    .onTapGesture { beginRecording() }
+                Button(recording ? "Cancel" : "Change") {
+                    if recording {
+                        recording = false
+                        setPaused(false)
+                    } else {
+                        beginRecording()
+                    }
                 }
-            Button(recording ? "Cancel" : "Change") {
-                recording.toggle()
-                monitor.paused = recording
+            }
+            if let validationMessage {
+                Text(validationMessage)
+                    .font(.caption2)
+                    .foregroundStyle(validationMessage.contains("override") ? .orange : .red)
             }
         }
         .background(
-            HotkeyCatcher(isRecording: $recording, hotkey: $hotkey) {
-                monitor.paused = false
-            }
+            HotkeyCatcher(
+                isRecording: $recording,
+                onHotkey: accept,
+                onStop: { setPaused(false) }
+            )
         )
+    }
+
+    private func beginRecording() {
+        validationMessage = nil
+        recording = true
+        setPaused(true)
+    }
+
+    private func accept(_ candidate: Hotkey) {
+        if candidate.conflicts(with: conflictingHotkey) {
+            validationMessage = "Overlaps the \(conflictName) shortcut."
+        } else if let systemName = candidate.knownSystemShortcutName {
+            if allowsSystemShortcuts {
+                validationMessage = "Dev will override \(systemName) while running."
+                hotkey = candidate
+            } else {
+                validationMessage = "Used by \(systemName). Choose another shortcut."
+            }
+        } else {
+            validationMessage = nil
+            hotkey = candidate
+        }
     }
 }
 
 private struct HotkeyCatcher: NSViewRepresentable {
     @Binding var isRecording: Bool
-    @Binding var hotkey: Hotkey
+    var onHotkey: (Hotkey) -> Void
     var onStop: () -> Void
 
     func makeNSView(context: Context) -> CatcherView {
         let view = CatcherView()
         view.onHotkey = { value in
-            hotkey = value
+            onHotkey(value)
             isRecording = false
             onStop()
         }
@@ -777,6 +917,15 @@ private struct HotkeyCatcher: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: CatcherView, context: Context) {
+        nsView.onHotkey = { value in
+            onHotkey(value)
+            isRecording = false
+            onStop()
+        }
+        nsView.onCancel = {
+            isRecording = false
+            onStop()
+        }
         nsView.recording = isRecording
     }
 
@@ -794,8 +943,9 @@ private struct HotkeyCatcher: NSViewRepresentable {
             super.viewDidMoveToWindow()
             if window != nil, monitor == nil {
                 monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
-                    self?.handle(event)
-                    return self?.recording == true ? nil : event
+                    guard let self, self.recording else { return event }
+                    self.handle(event)
+                    return nil
                 }
             }
         }

@@ -17,6 +17,14 @@ final class SettingsStore {
         didSet { defaults.set(pushToTalkMode.rawValue, forKey: Keys.pushToTalkMode) }
     }
 
+    var screenshotsEnabled: Bool {
+        didSet { defaults.set(screenshotsEnabled, forKey: Keys.screenshotsEnabled) }
+    }
+
+    var screenshotHotkey: Hotkey {
+        didSet { saveScreenshotHotkey() }
+    }
+
     var hotkey: Hotkey {
         didSet { saveHotkey() }
     }
@@ -62,6 +70,7 @@ final class SettingsStore {
         languageBias = defaults.string(forKey: Keys.languageBias) ?? ""
         soundEnabled = defaults.object(forKey: Keys.soundEnabled) as? Bool ?? true
         dictationEnabled = defaults.object(forKey: Keys.dictationEnabled) as? Bool ?? true
+        screenshotsEnabled = defaults.object(forKey: Keys.screenshotsEnabled) as? Bool ?? true
         if let raw = defaults.string(forKey: Keys.pushToTalkMode),
            let mode = PushToTalkMode(rawValue: raw) {
             pushToTalkMode = mode
@@ -76,11 +85,29 @@ final class SettingsStore {
         } else {
             hotkey = .controlOption
         }
+        if let data = defaults.data(forKey: Keys.screenshotHotkey),
+           let decoded = try? JSONDecoder().decode(Hotkey.self, from: data) {
+            screenshotHotkey = decoded.knownSystemShortcutName == nil ? decoded : .screenshotDefault
+        } else {
+            screenshotHotkey = .screenshotDefault
+        }
+        if hotkey.conflicts(with: screenshotHotkey) {
+            hotkey = .controlOption
+            screenshotHotkey = .screenshotDefault
+        }
+        saveHotkey()
+        saveScreenshotHotkey()
     }
 
     private func saveHotkey() {
         if let data = try? JSONEncoder().encode(hotkey) {
             defaults.set(data, forKey: Keys.hotkey)
+        }
+    }
+
+    private func saveScreenshotHotkey() {
+        if let data = try? JSONEncoder().encode(screenshotHotkey) {
+            defaults.set(data, forKey: Keys.screenshotHotkey)
         }
     }
 
@@ -105,6 +132,8 @@ final class SettingsStore {
         static let soundEnabled = "soundEnabled"
         static let dictationEnabled = "dictationEnabled"
         static let pushToTalkMode = "pushToTalkMode"
+        static let screenshotsEnabled = "screenshots.enabled"
+        static let screenshotHotkey = "screenshots.hotkey"
     }
 }
 

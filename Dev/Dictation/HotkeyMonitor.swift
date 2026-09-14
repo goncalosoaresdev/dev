@@ -5,6 +5,9 @@ import Foundation
 import os
 
 final class HotkeyMonitor: NSObject, @unchecked Sendable {
+    static let carbonSignature: OSType = 0x44455648 // DEVH
+    static let carbonID: UInt32 = 1
+
     var onBegin: (@MainActor @Sendable () -> Void)?
     var onEnd: (@MainActor @Sendable () -> Void)?
     var onCancel: (@MainActor @Sendable () -> Void)?
@@ -17,13 +20,37 @@ final class HotkeyMonitor: NSObject, @unchecked Sendable {
 
     var paused: Bool {
         get { lock.withLock { _paused } }
-        set { lock.withLock { _paused = newValue } }
+        set {
+            let shouldCancel = lock.withLock { () -> Bool in
+                let wasActive = isDown || pendingModifierBegin
+                _paused = newValue
+                if newValue {
+                    isDown = false
+                    pendingModifierBegin = false
+                    pendingBeginGeneration &+= 1
+                }
+                return newValue && wasActive
+            }
+            if shouldCancel { fire(onCancel) }
+        }
     }
 
     func setHotkey(_ hotkey: Hotkey) {
-        lock.withLock { _hotkey = hotkey }
+        lock.withLock {
+            _hotkey = hotkey
+            pendingModifierBegin = false
+            pendingBeginGeneration &+= 1
+        }
         DispatchQueue.main.async { [weak self] in
             self?.refreshCarbonHotkey()
+        }
+    }
+
+    func setReservedKeyedHotkeys(_ hotkeys: [Hotkey]) {
+        lock.withLock {
+            reservedKeyedHotkeys = hotkeys.filter { !$0.modifiersOnly }
+            pendingModifierBegin = false
+            pendingBeginGeneration &+= 1
         }
     }
 
@@ -37,6 +64,9 @@ final class HotkeyMonitor: NSObject, @unchecked Sendable {
     private var carbonHotkey: EventHotKeyRef?
     private var carbonHandler: EventHandlerRef?
     private var isDown = false
+    private var pendingModifierBegin = false
+    private var pendingBeginGeneration: UInt64 = 0
+    private var reservedKeyedHotkeys: [Hotkey] = []
     private var _paused = false
     private var started = false
     private var _hotkey = Hotkey.controlOption
@@ -139,6 +169,7 @@ final class HotkeyMonitor: NSObject, @unchecked Sendable {
         ]
         let callback: EventHandlerUPP = { _, event, userData in
             guard let event, let userData else { return OSStatus(eventNotHandledErr) }
+            guard HotkeyMonitor.owns(event) else { return OSStatus(eventNotHandledErr) }
             let monitor = Unmanaged<HotkeyMonitor>.fromOpaque(userData).takeUnretainedValue()
             switch GetEventKind(event) {
             case UInt32(kEventHotKeyPressed):
@@ -166,7 +197,7 @@ final class HotkeyMonitor: NSObject, @unchecked Sendable {
         }
         carbonHandler = handler
 
-        let hotkeyID = EventHotKeyID(signature: 0x44455648, id: 1)
+        let hotkeyID = EventHotKeyID(signature: Self.carbonSignature, id: Self.carbonID)
         var hotkeyRef: EventHotKeyRef?
         let registerStatus = RegisterEventHotKey(
             UInt32(state.1.keyCode),
@@ -193,6 +224,24 @@ final class HotkeyMonitor: NSObject, @unchecked Sendable {
         if flags.contains(.maskShift) { modifiers |= UInt32(shiftKey) }
         if flags.contains(.maskCommand) { modifiers |= UInt32(cmdKey) }
         return modifiers
+    }
+
+    static func owns(_ hotkeyID: EventHotKeyID) -> Bool {
+        hotkeyID.signature == carbonSignature && hotkeyID.id == carbonID
+    }
+
+    private static func owns(_ event: EventRef) -> Bool {
+        var hotkeyID = EventHotKeyID(signature: 0, id: 0)
+        let status = GetEventParameter(
+            event,
+            EventParamName(kEventParamDirectObject),
+            EventParamType(typeEventHotKeyID),
+            nil,
+            MemoryLayout<EventHotKeyID>.size,
+            nil,
+            &hotkeyID
+        )
+        return status == noErr && owns(hotkeyID)
     }
 
     private func carbonPressed() {
@@ -239,10 +288,10 @@ final class HotkeyMonitor: NSObject, @unchecked Sendable {
         let refcon = Unmanaged.passUnretained(self).toOpaque()
 
         let attempts: [(CGEventTapLocation, CGEventTapOptions)] = [
-            (.cghidEventTap, .listenOnly),
             (.cghidEventTap, .defaultTap),
-            (.cgSessionEventTap, .listenOnly),
-            (.cgSessionEventTap, .defaultTap)
+            (.cgSessionEventTap, .defaultTap),
+            (.cghidEventTap, .listenOnly),
+            (.cgSessionEventTap, .listenOnly)
         ]
 
         for (location, options) in attempts {
@@ -338,13 +387,24 @@ final class HotkeyMonitor: NSObject, @unchecked Sendable {
         }
 
         enum Transition {
-            case none, begin, end, cancel
+            case none, begin, delayedBegin(UInt64), end, cancel
         }
 
         let result: (Transition, Bool) = lock.withLock {
             if _paused { return (.none, false) }
 
             let relevant = flags.hotkeyRelevant
+            if reservedKeyedHotkeys.contains(where: {
+                $0.matchesKeyDown(type: type, keyCode: keyCode, flags: relevant)
+            }) {
+                pendingModifierBegin = false
+                pendingBeginGeneration &+= 1
+                if isDown {
+                    isDown = false
+                    return (.cancel, false)
+                }
+                return (.none, false)
+            }
             if isDown, type == .keyDown, keyCode == 53 {
                 isDown = false
                 return (.cancel, true)
@@ -357,6 +417,18 @@ final class HotkeyMonitor: NSObject, @unchecked Sendable {
                 wasDown: isDown
             )
             if held, !isDown {
+                if _hotkey.modifiersOnly {
+                    guard type == .flagsChanged else { return (.none, false) }
+                    let hasReservedChord = reservedKeyedHotkeys.contains {
+                        $0.isKeyedChord(using: relevant)
+                    }
+                    if hasReservedChord {
+                        if pendingModifierBegin { return (.none, false) }
+                        pendingModifierBegin = true
+                        pendingBeginGeneration &+= 1
+                        return (.delayedBegin(pendingBeginGeneration), false)
+                    }
+                }
                 isDown = true
                 return (.begin, true)
             }
@@ -364,16 +436,36 @@ final class HotkeyMonitor: NSObject, @unchecked Sendable {
                 isDown = false
                 return (.end, true)
             }
+            if !held, pendingModifierBegin {
+                pendingModifierBegin = false
+                pendingBeginGeneration &+= 1
+            }
             return (.none, held)
         }
 
         switch result.0 {
         case .none: break
         case .begin: fire(onBegin)
+        case .delayedBegin(let generation): scheduleModifierBegin(generation: generation)
         case .end: fire(onEnd)
         case .cancel: fire(onCancel)
         }
         return result.1
+    }
+
+    private func scheduleModifierBegin(generation: UInt64) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(160)) { [weak self] in
+            guard let self else { return }
+            let shouldBegin = self.lock.withLock { () -> Bool in
+                guard !self._paused,
+                      self.pendingModifierBegin,
+                      self.pendingBeginGeneration == generation else { return false }
+                self.pendingModifierBegin = false
+                self.isDown = true
+                return true
+            }
+            if shouldBegin { self.fire(self.onBegin) }
+        }
     }
 
     private func fire(_ handler: (@MainActor @Sendable () -> Void)?) {

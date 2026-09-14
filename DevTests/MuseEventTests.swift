@@ -1,4 +1,5 @@
 import XCTest
+import Carbon.HIToolbox
 @testable import Dev
 
 final class MuseEventTests: XCTestCase {
@@ -57,6 +58,145 @@ final class MuseEventTests: XCTestCase {
         XCTAssertTrue(hotkey.isHeld(flags: .maskCommand) { $0 == 2 })
         XCTAssertFalse(hotkey.isHeld(flags: .maskCommand) { $0 == 0 })
         XCTAssertFalse(hotkey.isHeld(flags: []) { $0 == 2 })
+    }
+
+    func testScreenshotHotkeyDefaultsToShiftCommandTwo() {
+        let hotkey = Hotkey.screenshotDefault
+        XCTAssertEqual(hotkey.keyCode, 19)
+        XCTAssertEqual(hotkey.display, "⇧⌘2")
+        XCTAssertFalse(hotkey.modifiersOnly)
+        XCTAssertTrue(hotkey.isActive(
+            type: .keyDown,
+            keyCode: 19,
+            flags: [.maskShift, .maskCommand],
+            wasDown: false
+        ))
+    }
+
+    func testKeyedScreenshotChordCanReserveModifierOnlyDictationPrefix() {
+        let dictation = Hotkey.controlOption
+        let screenshot = Hotkey(
+            keyCode: 1,
+            modifiers: CGEventFlags.maskControl.rawValue | CGEventFlags.maskAlternate.rawValue,
+            modifiersOnly: false
+        )
+
+        XCTAssertTrue(screenshot.isKeyedChord(using: dictation.flags))
+        XCTAssertTrue(screenshot.matchesKeyDown(
+            type: .keyDown,
+            keyCode: 1,
+            flags: [.maskControl, .maskAlternate]
+        ))
+        XCTAssertFalse(screenshot.matchesKeyDown(
+            type: .keyUp,
+            keyCode: 1,
+            flags: [.maskControl, .maskAlternate]
+        ))
+    }
+
+    func testShortcutConflictAndKnownMacOSShortcutDetection() {
+        let controlSpace = Hotkey(
+            keyCode: 49,
+            modifiers: CGEventFlags.maskControl.rawValue,
+            modifiersOnly: false
+        )
+        let controlOptionS = Hotkey(
+            keyCode: 1,
+            modifiers: CGEventFlags.maskControl.rawValue | CGEventFlags.maskAlternate.rawValue,
+            modifiersOnly: false
+        )
+
+        XCTAssertEqual(controlSpace.knownSystemShortcutName, "macOS input-source switching")
+        XCTAssertTrue(Hotkey.controlOption.conflicts(with: controlOptionS))
+        XCTAssertFalse(Hotkey.controlOption.conflicts(with: Hotkey.screenshotDefault))
+    }
+
+    func testCarbonHotkeyHandlersOnlyOwnTheirEvents() {
+        let dictation = EventHotKeyID(
+            signature: HotkeyMonitor.carbonSignature,
+            id: HotkeyMonitor.carbonID
+        )
+        let screenshot = EventHotKeyID(
+            signature: ScreenshotHotkeyMonitor.carbonSignature,
+            id: ScreenshotHotkeyMonitor.carbonID
+        )
+
+        XCTAssertTrue(HotkeyMonitor.owns(dictation))
+        XCTAssertFalse(HotkeyMonitor.owns(screenshot))
+        XCTAssertTrue(ScreenshotHotkeyMonitor.owns(screenshot))
+        XCTAssertFalse(ScreenshotHotkeyMonitor.owns(dictation))
+    }
+
+    @MainActor
+    func testScreenshotLibraryPersistsEditableAnnotations() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "DevTests-Screenshots-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let library = ScreenshotLibrary(directory: directory)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let context = try XCTUnwrap(CGContext(
+            data: nil,
+            width: 120,
+            height: 80,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 120, height: 40))
+        context.setFillColor(CGColor(red: 0, green: 0, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 40, width: 120, height: 40))
+        let image = try XCTUnwrap(context.makeImage())
+
+        let item = try library.save(image)
+        let before = try Data(contentsOf: item.url)
+        let beforeRep = try XCTUnwrap(NSBitmapImageRep(data: before))
+        let annotations = [
+            ScreenshotAnnotation(
+                kind: .rectangle,
+                rect: CGRect(x: 0.1, y: 0.2, width: 0.5, height: 0.4)
+            ),
+            ScreenshotAnnotation(
+                kind: .arrow,
+                points: [CGPoint(x: 0.1, y: 0.1), CGPoint(x: 0.8, y: 0.7)],
+                color: AnnotationColor(red: 0, green: 1, blue: 0, alpha: 1),
+                lineWidth: 6
+            ),
+            ScreenshotAnnotation(
+                kind: .text,
+                points: [CGPoint(x: 0.2, y: 0.3)],
+                text: "Review this"
+            ),
+            ScreenshotAnnotation(
+                kind: .redact,
+                rect: CGRect(x: 0.75, y: 0.75, width: 0.15, height: 0.1)
+            )
+        ]
+        try library.saveAnnotations(annotations, for: item)
+
+        XCTAssertEqual(library.annotations(for: item), annotations)
+        let after = try Data(contentsOf: item.url)
+        XCTAssertNotEqual(after, before)
+        let afterRep = try XCTUnwrap(NSBitmapImageRep(data: after))
+        let beforeBottomRed = try XCTUnwrap(
+            beforeRep.colorAt(x: 10, y: 10)?.usingColorSpace(.sRGB)?.redComponent
+        )
+        let afterBottomRed = try XCTUnwrap(
+            afterRep.colorAt(x: 10, y: 10)?.usingColorSpace(.sRGB)?.redComponent
+        )
+        let beforeTopBlue = try XCTUnwrap(
+            beforeRep.colorAt(x: 10, y: 70)?.usingColorSpace(.sRGB)?.blueComponent
+        )
+        let afterTopBlue = try XCTUnwrap(
+            afterRep.colorAt(x: 10, y: 70)?.usingColorSpace(.sRGB)?.blueComponent
+        )
+        XCTAssertEqual(beforeBottomRed, afterBottomRed, accuracy: 0.02)
+        XCTAssertEqual(beforeTopBlue, afterTopBlue, accuracy: 0.02)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: item.url.deletingPathExtension().appendingPathExtension("dev-original").path
+        ))
     }
 
     func testControlSpaceActivatesOnKeyDownNotKeyState() {

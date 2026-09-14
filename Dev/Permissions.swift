@@ -12,6 +12,7 @@ final class PermissionMonitor {
     private(set) var microphone: AVAuthorizationStatus
     private(set) var accessibilityTrusted: Bool
     private(set) var inputMonitoringTrusted: Bool
+    private(set) var screenRecordingGranted: Bool
     private var eventTapActive = false
 
     var microphoneGranted: Bool {
@@ -22,12 +23,14 @@ final class PermissionMonitor {
         microphone = AVCaptureDevice.authorizationStatus(for: .audio)
         accessibilityTrusted = Self.accessibilityGranted()
         inputMonitoringTrusted = Self.listenEventsGranted()
+        screenRecordingGranted = CGPreflightScreenCaptureAccess()
     }
 
     func refresh() {
         microphone = AVCaptureDevice.authorizationStatus(for: .audio)
         accessibilityTrusted = Self.accessibilityGranted()
         inputMonitoringTrusted = eventTapActive || Self.listenEventsGranted()
+        refreshScreenRecording()
     }
 
     func markEventTap(active: Bool) {
@@ -77,6 +80,20 @@ final class PermissionMonitor {
 
     func openInputMonitoringSettings() {
         open("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
+    }
+
+    func refreshScreenRecording() {
+        screenRecordingGranted = CGPreflightScreenCaptureAccess()
+    }
+
+    func requestScreenRecording() -> Bool {
+        let granted = CGRequestScreenCaptureAccess()
+        refreshScreenRecording()
+        return granted
+    }
+
+    func openScreenRecordingSettings() {
+        open("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
     }
 
     func revealAppInFinder() {

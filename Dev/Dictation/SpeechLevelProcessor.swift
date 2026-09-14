@@ -30,7 +30,7 @@ final class SpeechLevelProcessor: @unchecked Sendable {
     func process(_ data: Data) -> Data {
         guard data.count >= MemoryLayout<Int16>.size else { return data }
         var input = [Int16](repeating: 0, count: data.count / MemoryLayout<Int16>.size)
-        input.withUnsafeMutableBytes { destination in
+        _ = input.withUnsafeMutableBytes { destination in
             data.copyBytes(to: destination)
         }
         let output = process(input)

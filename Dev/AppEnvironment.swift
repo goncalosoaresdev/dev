@@ -10,6 +10,8 @@ final class AppEnvironment {
     let usage = UsageStore()
     let dictation: DictationController
     let hotkey = HotkeyMonitor()
+    let screenshots: ScreenshotController
+    let screenshotHotkey = ScreenshotHotkeyMonitor()
     private var settingsWindow: SettingsWindowController?
 
     init() {
@@ -19,10 +21,12 @@ final class AppEnvironment {
             overlay: overlay,
             usage: usage
         )
+        screenshots = ScreenshotController(settings: settings, permissions: permissions)
     }
 
     func start() {
         hotkey.setHotkey(settings.hotkey)
+        hotkey.setReservedKeyedHotkeys([settings.screenshotHotkey])
         hotkey.onBegin = { [dictation, settings] in
             guard settings.dictationEnabled else { return }
             if settings.pushToTalkMode == .toggle, dictation.phase == .recording {
@@ -43,7 +47,15 @@ final class AppEnvironment {
             permissions.markEventTap(active: false)
         }
         hotkey.start()
+        screenshotHotkey.setHotkey(settings.screenshotHotkey)
+        screenshotHotkey.onTrigger = { [dictation, screenshots, settings] in
+            guard settings.screenshotsEnabled else { return }
+            dictation.cancel()
+            screenshots.beginSelection()
+        }
+        screenshotHotkey.start()
         observeHotkey()
+        observeScreenshotHotkey()
         permissions.refresh()
         if settings.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             DispatchQueue.main.async { [weak self] in
@@ -59,14 +71,30 @@ final class AppEnvironment {
             Task { @MainActor in
                 guard let self else { return }
                 self.hotkey.setHotkey(self.settings.hotkey)
+                self.hotkey.setReservedKeyedHotkeys([self.settings.screenshotHotkey])
                 self.observeHotkey()
+            }
+        }
+    }
+
+    private func observeScreenshotHotkey() {
+        withObservationTracking {
+            _ = settings.screenshotHotkey
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.screenshotHotkey.setHotkey(self.settings.screenshotHotkey)
+                self.hotkey.setReservedKeyedHotkeys([self.settings.screenshotHotkey])
+                self.observeScreenshotHotkey()
             }
         }
     }
 
     func stop() {
         hotkey.stop()
+        screenshotHotkey.stop()
         dictation.cancel()
+        screenshots.cancel()
         overlay.hide()
     }
 
