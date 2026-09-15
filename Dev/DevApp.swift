@@ -28,11 +28,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        ApplicationIcon.refresh()
         menuBar = MenuBarController(environment: environment)
         environment.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         environment.stop()
+    }
+}
+
+@MainActor
+enum ApplicationIcon {
+    static func refresh() {
+        // Read the actual bundle file: the system's cached application image can
+        // outlive a local rebuild, especially when switching out of accessory mode.
+        guard let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String,
+              let url = Bundle.main.url(
+                forResource: name,
+                withExtension: (name as NSString).pathExtension.isEmpty ? "icns" : nil
+              ),
+              let image = NSImage(contentsOf: url) else { return }
+        NSApp.applicationIconImage = image
     }
 }

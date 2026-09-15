@@ -1,279 +1,379 @@
 import SwiftUI
 
 struct MenuPopoverView: View {
-    @Bindable var environment: AppEnvironment
-    var onOpenSettings: () -> Void = {}
-    var onInsertClip: (ClipboardItem) -> Void = { _ in }
+  @Bindable var environment: AppEnvironment
+  var onOpenSettings: () -> Void = {}
+  var onInsertClip: (ClipboardItem) -> Void = { _ in }
+  @State private var selectedTool: Tool = .dictation
+  @Namespace private var tabSelection
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
-        VStack(spacing: 16) {
-            header
-            dictationAction
-            shortcutHint
-            Divider()
-            screenshotAction
-            ScreenshotShelfView(screenshots: environment.screenshots)
-            ClipboardShelfView(clipboard: environment.clipboard, onInsert: onInsertClip)
-            Spacer(minLength: 0)
-            footer
-        }
-        .padding(16)
-        .frame(width: 340, height: 620, alignment: .top)
-        .tint(.accentColor)
+  private enum Tool: String, CaseIterable {
+    case dictation = "Dictation"
+    case screenshots = "Screenshots"
+    case clipboard = "Clipboard"
+    var symbol: String {
+      switch self {
+      case .dictation: "waveform"
+      case .screenshots: "viewfinder"
+      case .clipboard: "doc.on.clipboard"
+      }
     }
-
-    private var header: some View {
-        HStack(spacing: 13) {
-            MenuWaveform(
-                level: CGFloat(environment.dictation.level),
-                phase: environment.dictation.phase
-            )
-            .frame(width: 72, height: 28)
-            .frame(width: 92, height: 48)
-            .background(.primary.opacity(0.06), in: Capsule(style: .continuous))
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(statusTitle)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text(statusDetail)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    var key: KeyEquivalent {
+      switch self {
+      case .dictation: "1"
+      case .screenshots: "2"
+      case .clipboard: "3"
+      }
     }
+  }
 
-    private var dictationAction: some View {
-        Button(action: toggleDictation) {
-            HStack(spacing: 8) {
-                Image(systemName: dictationButtonIcon)
-                    .symbolRenderingMode(.monochrome)
-                Text(dictationButtonTitle)
-            }
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
-            .frame(maxWidth: .infinity)
-            .frame(height: 38)
+  var body: some View {
+    VStack(spacing: 0) {
+      tabRail
+      Group {
+        switch selectedTool {
+        case .dictation: dictationWorkspace
+        case .screenshots: screenshotWorkspace
+        case .clipboard:
+          ClipboardShelfView(clipboard: environment.clipboard, onInsert: onInsertClip)
         }
-        .buttonStyle(MonochromePrimaryButtonStyle())
-        .disabled(!environment.settings.dictationEnabled || environment.dictation.phase == .finishing)
+      }
+      .padding(.top, 14)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+      footer
     }
-
-    private var shortcutHint: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "keyboard")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-
-            Text(shortcutLead)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-
-            Text(environment.settings.hotkey.display)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
+    .padding(14)
+    .frame(width: 340, height: 360, alignment: .top)
+    .background {
+      LinearGradient(
+        colors: [.primary.opacity(0.035), .clear], startPoint: .topLeading,
+        endPoint: .bottomTrailing)
     }
+    .tint(.primary)
+  }
 
-    private var footer: some View {
-        HStack(spacing: 8) {
-            MenuFooterButton(title: "Settings", symbol: "gearshape") {
-                onOpenSettings()
-            }
-            .keyboardShortcut(",", modifiers: .command)
+  private func select(_ tool: Tool) {
+    withAnimation(reduceMotion ? nil : .snappy(duration: 0.24)) { selectedTool = tool }
+  }
 
-            MenuFooterButton(title: "Quit", symbol: "power") {
-                NSApp.terminate(nil)
-            }
-        }
-    }
-
-    private var screenshotAction: some View {
+  private var tabRail: some View {
+    HStack(spacing: 3) {
+      ForEach(Tool.allCases, id: \.self) { tool in
         Button {
-            environment.screenshots.beginSelection()
+          select(tool)
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "viewfinder")
-                    .symbolRenderingMode(.monochrome)
-                Text("Capture Selection")
-                Spacer()
-                Text(environment.settings.screenshotHotkey.display)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+          HStack(spacing: 5) {
+            Image(systemName: tool.symbol).font(.system(size: 12, weight: .medium))
+              .overlay(alignment: .topTrailing) {
+                if tool == .dictation, dictationActive {
+                  Circle().fill(.primary).frame(width: 4, height: 4).offset(x: 3, y: -3)
+                }
+              }
+            Text(tool.rawValue).font(.system(size: 10, weight: .semibold))
+          }
+          .foregroundStyle(selectedTool == tool ? .primary : .secondary)
+          .frame(maxWidth: .infinity)
+          .frame(height: 32)
+          .background {
+            if selectedTool == tool {
+              RoundedRectangle(cornerRadius: 9)
+                .fill(.regularMaterial)
+                .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(.primary.opacity(0.08)) }
+                .shadow(color: .black.opacity(0.08), radius: 3, y: 2)
+                .matchedGeometryEffect(id: "tool", in: tabSelection)
             }
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity)
-            .frame(height: 38)
+          }
+          .contentShape(RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.plain)
-        .background(.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .disabled(!environment.settings.screenshotsEnabled || screenshotBusy)
+        .keyboardShortcut(tool.key, modifiers: .command)
+        .help(tool == .dictation && dictationActive ? statusTitle : tool.rawValue)
+        .accessibilityAddTraits(selectedTool == tool ? .isSelected : [])
+      }
     }
+    .padding(3)
+    .background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Tools")
+  }
 
-    private var screenshotBusy: Bool {
-        switch environment.screenshots.phase {
-        case .idle, .failed: false
-        case .requestingPermission, .selecting, .capturing, .saving: true
-        }
-    }
+  private var dictationActive: Bool {
+    environment.dictation.phase == .starting || environment.dictation.phase == .recording
+      || environment.dictation.phase == .finishing
+  }
 
-    private func toggleDictation() {
-        switch environment.dictation.phase {
-        case .idle, .error:
-            environment.dictation.begin()
-        case .starting, .recording:
-            environment.dictation.end()
-        case .finishing:
-            break
+  private var dictationWorkspace: some View {
+    GeometryReader { geometry in
+      ScrollView {
+        VStack(spacing: 8) {
+          ZStack {
+            Capsule().strokeBorder(.primary.opacity(0.05)).frame(width: 164, height: 60)
+            Capsule().fill(.primary.opacity(0.035)).frame(width: 144, height: 46)
+            MenuWaveform(
+              level: CGFloat(environment.dictation.level), phase: environment.dictation.phase
+            )
+            .scaleEffect(1.3)
+            .frame(width: 100, height: 30)
+          }
+          .frame(height: 68)
+          Text(statusTitle)
+            .font(.system(size: 18, weight: .semibold, design: .rounded))
+          if !statusDetail.isEmpty {
+            Text(statusDetail)
+              .font(.system(size: 11))
+              .foregroundStyle(.secondary)
+              .multilineTextAlignment(.center)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+          if readinessIssue != nil || !environment.settings.dictationEnabled {
+            Button("Open Settings", action: onOpenSettings)
+              .buttonStyle(.plain)
+              .font(.system(size: 11, weight: .semibold))
+          }
+          VStack(spacing: 8) {
+            dictationAction
+            shortcutHint
+          }
+          .padding(.top, 12)
         }
+        .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+      }
+      .scrollIndicators(.hidden)
     }
+    .padding(.bottom, 12)
+  }
 
-    private var dictationButtonTitle: String {
-        switch environment.dictation.phase {
-        case .idle, .error: "Start Dictation"
-        case .starting, .recording: "Stop & Insert"
-        case .finishing: "Transcribing"
-        }
+  private var screenshotWorkspace: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      if !environment.settings.screenshotsEnabled {
+        Text("Screenshots paused")
+          .font(.system(size: 11)).foregroundStyle(.secondary)
+      }
+      screenshotAction
+      ScreenshotShelfView(screenshots: environment.screenshots)
     }
+    .padding(.bottom, 12)
+  }
 
-    private var dictationButtonIcon: String {
-        switch environment.dictation.phase {
-        case .idle, .error: "waveform"
-        case .starting, .recording: "stop.fill"
-        case .finishing: "ellipsis"
-        }
+  private var dictationAction: some View {
+    Button(action: toggleDictation) {
+      HStack(spacing: 8) {
+        Image(systemName: dictationButtonIcon)
+          .symbolRenderingMode(.monochrome)
+        Text(dictationButtonTitle)
+      }
+      .font(.system(size: 13, weight: .semibold, design: .rounded))
+      .frame(maxWidth: .infinity)
+      .frame(height: 38)
     }
+    .buttonStyle(MonochromePrimaryButtonStyle())
+    .disabled(!environment.settings.dictationEnabled || environment.dictation.phase == .finishing)
+  }
 
-    private var statusTitle: String {
-        switch environment.dictation.phase {
-        case .idle: readinessIssue == nil ? "Ready" : "Setup needed"
-        case .starting: "Starting"
-        case .recording: "Listening"
-        case .finishing: "Transcribing"
-        case .error: "Needs attention"
-        }
-    }
+  private var shortcutHint: some View {
+    HStack(spacing: 7) {
+      Text(shortcutLead)
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
 
-    private var statusDetail: String {
-        if let readinessIssue { return readinessIssue }
-        if case .error(let message) = environment.dictation.phase { return message }
-        return switch environment.dictation.phase {
-        case .idle, .error: "Dictation is available in every app"
-        case .starting: "Preparing the microphone"
-        case .recording: "Release the shortcut to insert"
-        case .finishing: "Preparing your text"
-        }
-    }
+      Text(environment.settings.hotkey.display)
+        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
 
-    private var readinessIssue: String? {
-        if environment.settings.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return "Add your Muse API key in Settings"
-        }
-        if !environment.permissions.microphoneGranted {
-            return "Enable Microphone access in Settings"
-        }
-        if !environment.permissions.inputMonitoringTrusted {
-            return "Enable Input Monitoring in Settings"
-        }
-        if !environment.permissions.accessibilityTrusted {
-            return "Enable Accessibility in Settings"
-        }
-        return nil
     }
+    .frame(maxWidth: .infinity)
+  }
 
-    private var shortcutLead: String {
-        environment.settings.pushToTalkMode == .hold ? "Hold to dictate" : "Press to dictate"
+  private var footer: some View {
+    VStack(spacing: 8) {
+      Rectangle().fill(.primary.opacity(0.08)).frame(height: 1)
+      HStack {
+        Button(action: onOpenSettings) {
+          Image(systemName: "gearshape")
+        }
+        .keyboardShortcut(",", modifiers: .command)
+        .help("Settings")
+        .accessibilityLabel("Settings")
+        Spacer()
+        Button {
+          NSApp.terminate(nil)
+        } label: {
+          Image(systemName: "power")
+        }
+        .help("Quit Dev")
+        .accessibilityLabel("Quit Dev")
+      }
+      .font(.system(size: 11, weight: .medium))
+      .foregroundStyle(.secondary)
+      .buttonStyle(.plain)
     }
+  }
+
+  private var screenshotAction: some View {
+    Button {
+      environment.dictation.cancel()
+      environment.screenshots.beginSelection()
+    } label: {
+      HStack(spacing: 8) {
+        Image(systemName: "viewfinder")
+          .symbolRenderingMode(.monochrome)
+        Text("Capture Selection")
+        Spacer()
+        Text(environment.settings.screenshotHotkey.display)
+          .font(.system(size: 10, weight: .semibold, design: .monospaced))
+          .padding(.horizontal, 7)
+          .padding(.vertical, 3)
+          .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+      }
+      .font(.system(size: 13, weight: .semibold, design: .rounded))
+      .padding(.horizontal, 12)
+      .frame(maxWidth: .infinity)
+      .frame(height: 38)
+    }
+    .buttonStyle(MonochromePrimaryButtonStyle())
+    .disabled(!environment.settings.screenshotsEnabled || screenshotBusy)
+  }
+
+  private var screenshotBusy: Bool {
+    switch environment.screenshots.phase {
+    case .idle, .failed: false
+    case .requestingPermission, .selecting, .capturing, .saving: true
+    }
+  }
+
+  private func toggleDictation() {
+    switch environment.dictation.phase {
+    case .idle, .error:
+      environment.dictation.begin()
+    case .starting, .recording:
+      environment.dictation.end()
+    case .finishing:
+      break
+    }
+  }
+
+  private var dictationButtonTitle: String {
+    switch environment.dictation.phase {
+    case .idle, .error: "Start Dictation"
+    case .starting, .recording: "Stop & Insert"
+    case .finishing: "Transcribing"
+    }
+  }
+
+  private var dictationButtonIcon: String {
+    switch environment.dictation.phase {
+    case .idle, .error: "waveform"
+    case .starting, .recording: "stop.fill"
+    case .finishing: "ellipsis"
+    }
+  }
+
+  private var statusTitle: String {
+    if !environment.settings.dictationEnabled { return "Paused" }
+    return switch environment.dictation.phase {
+    case .idle: readinessIssue == nil ? "Ready" : "Setup needed"
+    case .starting: "Starting"
+    case .recording: "Listening"
+    case .finishing: "Transcribing"
+    case .error: "Needs attention"
+    }
+  }
+
+  private var statusDetail: String {
+    if !environment.settings.dictationEnabled {
+      return "Enable Dictation in Settings to start speaking."
+    }
+    if case .error(let message) = environment.dictation.phase { return message }
+    if environment.dictation.phase == .idle, let readinessIssue { return readinessIssue }
+    return switch environment.dictation.phase {
+    case .idle, .error, .starting, .recording, .finishing: ""
+    }
+  }
+
+  private var readinessIssue: String? {
+    if environment.settings.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return "Add your Muse API key in Settings"
+    }
+    if !environment.permissions.microphoneGranted {
+      return "Enable Microphone access in Settings"
+    }
+    if !environment.permissions.inputMonitoringTrusted {
+      return "Enable Input Monitoring in Settings"
+    }
+    if !environment.permissions.accessibilityTrusted {
+      return "Enable Accessibility in Settings"
+    }
+    return nil
+  }
+
+  private var shortcutLead: String {
+    environment.settings.pushToTalkMode == .hold ? "Hold to dictate" : "Press to dictate"
+  }
 }
 
 private struct MenuWaveform: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let level: CGFloat
-    let phase: DictationController.Phase
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let level: CGFloat
+  let phase: DictationController.Phase
 
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 24, paused: reduceMotion || isIdle)) { timeline in
-            let time = timeline.date.timeIntervalSinceReferenceDate
-            HStack(spacing: 2.5) {
-                ForEach(0..<13, id: \.self) { index in
-                    Capsule(style: .continuous)
-                        .fill(.primary.opacity(barOpacity(index)))
-                        .frame(width: 2.3, height: barHeight(index, time: time))
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+  var body: some View {
+    TimelineView(.animation(minimumInterval: 1 / 24, paused: reduceMotion || isIdle)) { timeline in
+      let time = timeline.date.timeIntervalSinceReferenceDate
+      HStack(spacing: 2.5) {
+        ForEach(0..<13, id: \.self) { index in
+          Capsule(style: .continuous)
+            .fill(.primary.opacity(barOpacity(index)))
+            .frame(width: 2.3, height: barHeight(index, time: time))
         }
-        .accessibilityHidden(true)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+    .accessibilityHidden(true)
+  }
 
-    private var isIdle: Bool {
-        if case .idle = phase { return true }
-        if case .error = phase { return true }
-        return false
+  private var isIdle: Bool {
+    if case .idle = phase { return true }
+    if case .error = phase { return true }
+    return false
+  }
+
+  private func barHeight(_ index: Int, time: TimeInterval) -> CGFloat {
+    let position = CGFloat(index) / 12
+    let envelope = 0.58 + 0.42 * sin(position * .pi)
+
+    switch phase {
+    case .recording:
+      let energy = min(1, max(0.08, level))
+      let movement = reduceMotion ? 0.7 : 0.55 + 0.45 * sin(time * 9 + Double(index) * 0.9)
+      return 3 + 21 * energy * envelope * CGFloat(movement)
+    case .starting, .finishing:
+      let movement = reduceMotion ? 0.55 : 0.5 + 0.5 * sin(time * 5 - Double(index) * 0.7)
+      return 3 + 13 * envelope * CGFloat(movement)
+    case .idle, .error:
+      return 4 + 10 * envelope * (0.55 + 0.25 * sin(Double(index) * 1.1))
     }
+  }
 
-    private func barHeight(_ index: Int, time: TimeInterval) -> CGFloat {
-        let position = CGFloat(index) / 12
-        let envelope = 0.58 + 0.42 * sin(position * .pi)
-
-        switch phase {
-        case .recording:
-            let energy = min(1, max(0.08, level))
-            let movement = reduceMotion ? 0.7 : 0.55 + 0.45 * sin(time * 9 + Double(index) * 0.9)
-            return 3 + 21 * energy * envelope * CGFloat(movement)
-        case .starting, .finishing:
-            let movement = reduceMotion ? 0.55 : 0.5 + 0.5 * sin(time * 5 - Double(index) * 0.7)
-            return 3 + 13 * envelope * CGFloat(movement)
-        case .idle, .error:
-            return 4 + 10 * envelope * (0.55 + 0.25 * sin(Double(index) * 1.1))
-        }
-    }
-
-    private func barOpacity(_ index: Int) -> Double {
-        let distance = abs(Double(index) - 6) / 6
-        return 0.5 + (1 - distance) * 0.45
-    }
+  private func barOpacity(_ index: Int) -> Double {
+    let distance = abs(Double(index) - 6) / 6
+    return 0.5 + (1 - distance) * 0.45
+  }
 }
 
 private struct MonochromePrimaryButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
+  @Environment(\.isEnabled) private var isEnabled
 
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(Color(nsColor: .windowBackgroundColor))
-            .background(
-                Color.primary.opacity(isEnabled ? (configuration.isPressed ? 0.78 : 1) : 0.28),
-                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-            )
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
-    }
-}
-
-private struct MenuFooterButton: View {
-    let title: String
-    let symbol: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .frame(maxWidth: .infinity)
-                .frame(height: 30)
-                .background(.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 9))
-        }
-        .buttonStyle(.plain)
-    }
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .foregroundStyle(Color(nsColor: .windowBackgroundColor))
+      .background(
+        Color.primary.opacity(isEnabled ? (configuration.isPressed ? 0.78 : 1) : 0.28),
+        in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+      )
+      .scaleEffect(configuration.isPressed ? 0.985 : 1)
+      .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+  }
 }

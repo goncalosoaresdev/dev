@@ -104,7 +104,8 @@ struct SettingsView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .frame(width: 150)
+                    .fixedSize()
+                    .frame(width: 150, alignment: .trailing)
                 }
 
                 SettingsDivider()
@@ -126,13 +127,22 @@ struct SettingsView: View {
 
             SettingsCard(title: "Transcription", symbol: "waveform") {
                 SettingsControlRow(title: "Provider", detail: "Speech recognition service") {
-                    Picker("Provider", selection: $settings.providerID) {
-                        ForEach(ProviderRegistry.all, id: \.id) { provider in
-                            Text(provider.displayName).tag(provider.id)
+                    Menu {
+                        Picker("Provider", selection: $settings.providerID) {
+                            ForEach(ProviderRegistry.all, id: \.id) { provider in
+                                providerLabel(provider).tag(provider.id)
+                            }
                         }
+                        .pickerStyle(.inline)
+                        .labelsHidden()
+                    } label: {
+                        providerLabel(ProviderRegistry.provider(id: settings.providerID))
                     }
-                    .labelsHidden()
-                    .frame(width: 170)
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .frame(width: 170, alignment: .trailing)
+                    .accessibilityLabel("Dictation provider")
+                    .accessibilityValue(ProviderRegistry.provider(id: settings.providerID).displayName)
                 }
 
                 SettingsDivider()
@@ -172,6 +182,15 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+
+    private func providerLabel(_ provider: any TranscriptionProvider) -> some View {
+        HStack(spacing: 6) {
+            if provider.id == MuseProvider().id {
+                ProviderLogo(providerID: provider.id)
+            }
+            Text(provider.displayName)
         }
     }
 
@@ -385,6 +404,7 @@ struct SettingsView: View {
                         let provider = providers[index]
                         if index > 0 { SettingsDivider() }
                         ProviderUsageRow(
+                            providerID: provider.providerID,
                             name: providerName(provider.providerID),
                             duration: formatDuration(provider.summary.audioSeconds),
                             sessions: provider.summary.sessions,
@@ -721,7 +741,35 @@ private struct UsageMetric: View {
     }
 }
 
+private struct ProviderLogo: View {
+    let providerID: String
+
+    // Native menus use the NSImage's intrinsic size, not only SwiftUI's frame.
+    private static let metaImage: NSImage = {
+        let image = (NSImage(named: "MetaLogo")?.copy() as? NSImage)
+            ?? NSImage(size: NSSize(width: 18, height: 18))
+        image.size = NSSize(width: 18, height: 18)
+        image.isTemplate = false
+        return image
+    }()
+
+    var body: some View {
+        Group {
+            if providerID == MuseProvider().id {
+                Image(nsImage: Self.metaImage)
+                    .renderingMode(.original)
+            } else {
+                Image(systemName: "waveform")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 18, height: 18)
+        .accessibilityHidden(true)
+    }
+}
+
 private struct ProviderUsageRow: View {
+    let providerID: String
     let name: String
     let duration: String
     let sessions: Int
@@ -729,9 +777,7 @@ private struct ProviderUsageRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "waveform")
-                .symbolRenderingMode(.monochrome)
-                .foregroundStyle(.secondary)
+            ProviderLogo(providerID: providerID)
                 .frame(width: 24)
             Text(name)
                 .font(.system(size: 13, weight: .medium))

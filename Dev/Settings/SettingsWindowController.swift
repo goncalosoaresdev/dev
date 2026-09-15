@@ -14,6 +14,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     func show() {
         guard let environment else { return }
         NSApp.setActivationPolicy(.regular)
+        ApplicationIcon.refresh()
         NSApp.activate(ignoringOtherApps: true)
 
         if window == nil {

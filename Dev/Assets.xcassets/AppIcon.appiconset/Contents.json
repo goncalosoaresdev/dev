@@ -1,61 +1,61 @@
 {
   "images" : [
     {
-      "filename" : "AppIcon-Talking-16.png",
+      "filename" : "AppIcon-Graphite-16.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "16x16"
     },
     {
-      "filename" : "AppIcon-Talking-16@2x.png",
+      "filename" : "AppIcon-Graphite-32.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "16x16"
     },
     {
-      "filename" : "AppIcon-Talking-32.png",
+      "filename" : "AppIcon-Graphite-32.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "32x32"
     },
     {
-      "filename" : "AppIcon-Talking-32@2x.png",
+      "filename" : "AppIcon-Graphite-64.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "32x32"
     },
     {
-      "filename" : "AppIcon-Talking-128.png",
+      "filename" : "AppIcon-Graphite-128.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "128x128"
     },
     {
-      "filename" : "AppIcon-Talking-128@2x.png",
+      "filename" : "AppIcon-Graphite-256.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "128x128"
     },
     {
-      "filename" : "AppIcon-Talking-256.png",
+      "filename" : "AppIcon-Graphite-256.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "256x256"
     },
     {
-      "filename" : "AppIcon-Talking-256@2x.png",
+      "filename" : "AppIcon-Graphite-512.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "256x256"
     },
     {
-      "filename" : "AppIcon-Talking-512.png",
+      "filename" : "AppIcon-Graphite-512.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "512x512"
     },
     {
-      "filename" : "AppIcon-Talking-v2.png",
+      "filename" : "AppIcon-Graphite-1024.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "512x512"
